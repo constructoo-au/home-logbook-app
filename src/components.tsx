@@ -366,6 +366,28 @@ export function PathChips({
   );
 }
 
+export function PropertyScopeChip({
+  scope,
+  compact = false,
+}: {
+  scope: SummaryRecord['propertyScope'];
+  compact?: boolean;
+}) {
+  return (
+    <View style={[styles.propertyScopeChip, compact && styles.propertyScopeChipCompact]}>
+      <Text style={styles.propertyScopeChipText} numberOfLines={1}>Scope: {scope}</Text>
+    </View>
+  );
+}
+
+export function StatusPill({ status }: { status: SummaryRecord['fileStatus'] }) {
+  return (
+    <View style={[styles.statusPill, statusPillStyles[status]]}>
+      <Text style={[styles.statusPillText, statusPillTextStyles[status]]} numberOfLines={1}>{status}</Text>
+    </View>
+  );
+}
+
 export function SourceFilePreviewCard({
   summary,
   onOpenSource,
@@ -393,11 +415,19 @@ export function SourceFilePreviewCard({
       </View>
 
       <View style={styles.sourceMetaGrid}>
+        <SourceMeta label="File name" value={summary.fileName ?? `${summary.title}.pdf`} />
         <SourceMeta label="File type" value={summary.fileType ?? summary.documentType} />
         <SourceMeta label="Uploaded" value={summary.uploadedDate} />
         <SourceMeta label="Version" value={summary.version} />
         <SourceMeta label="Latest" value={summary.latest ? 'Latest version' : 'Older version'} />
+        <SourceMeta label="Status" value={summary.fileStatus} />
+        <SourceMeta label="Scope" value={summary.propertyScope} />
+        <SourceMeta label="Document type" value={summary.documentType} />
+        <SourceMeta label="WBS path" value={`${summary.wbsCode} ${summary.wbsName}`} />
       </View>
+
+      <PropertyScopeChip scope={summary.propertyScope} />
+      <PathChips path={summary.path} onPress={onOpenSource} />
 
       <ScrollView
         nestedScrollEnabled
@@ -482,17 +512,26 @@ export function SummaryCard({
   const isFull = variant === 'full';
   const rows = [
     ['Document type', summary.documentType],
+    ['File name', summary.fileName ?? `${summary.title}.pdf`],
+    ['Issued by', summary.supplier ?? 'Not captured'],
+    ['Amount', summary.amount ?? 'N/A'],
     ['Uploaded date', summary.uploadedDate],
-    ['Issued by', summary.supplier],
+    ['Version', summary.version],
+    ['Latest version', summary.latest ? 'Yes' : 'No'],
+    ['Status', confirmed ? 'Current' : summary.fileStatus],
+    ['Scope', summary.propertyScope],
+    ['WBS path', `${summary.wbsCode} ${summary.wbsName}`],
+    ['AI confidence score', summary.confidence ?? '0.91'],
+    ['User confirmed', confirmed || summary.fileStatus !== 'Pending Review' ? 'Yes' : 'No'],
+    ['Last updated date', summary.uploadedDate],
+    ['AI summary', summary.aiSummary],
+    ['Extracted key information', summary.details?.map((detail) => `${detail.label}: ${detail.value}`).slice(0, 3).join(' / ')],
     ...(summary.details?.map((detail) => [detail.label, detail.value] as [string, string]) ?? []),
-    ['Amount', summary.amount],
     ['Asset', summary.asset],
     ['Warranty', summary.warranty],
     ['Reminder suggested', summary.reminder],
     ['Confidence', summary.confidence],
-    ['Status', confirmed ? 'Confirmed' : summary.status],
-    ['Version', summary.version],
-    ['Latest version', summary.latest ? 'Yes' : 'No'],
+    ['Review status', confirmed ? 'Confirmed' : summary.status],
     ].filter((row): row is [string, string] => Boolean(row[1]));
   const compactDetails = summary.details?.slice(0, 6) ?? [];
 
@@ -507,8 +546,23 @@ export function SummaryCard({
           <Text style={styles.summaryTitle}>{summary.title}</Text>
           <Text style={styles.summarySubtitle}>{summary.documentType}</Text>
         </View>
-        <Pill tone={summary.latest ? 'success' : 'neutral'}>{summary.latest ? 'Latest' : 'Older'}</Pill>
+        <View style={styles.summaryPillStack}>
+          <Pill tone={summary.latest ? 'success' : 'neutral'}>{summary.latest ? 'Latest' : 'Older'}</Pill>
+          <StatusPill status={summary.fileStatus} />
+        </View>
       </View>
+
+      <PropertyScopeChip scope={summary.propertyScope} compact={!isFull} />
+
+      {summary.fileStatus === 'Pending Review' ? (
+        <View style={styles.pendingReviewBlock}>
+          <Text style={styles.pendingReviewText}>AI needs your confirmation before this file becomes part of your current Home Logbook.</Text>
+          <View style={styles.pendingReviewActions}>
+            <CTAButton small onPress={onConfirm}>Review</CTAButton>
+            <CTAButton variant="secondary" small onPress={onEdit}>Edit</CTAButton>
+          </View>
+        </View>
+      ) : null}
 
       {isFull ? (
         <View style={styles.fields}>
@@ -526,6 +580,11 @@ export function SummaryCard({
             <Text style={styles.metaText}>{summary.version}</Text>
             <Text style={styles.metaDivider}>/</Text>
             <Text style={styles.metaText}>{summary.latest ? 'Latest version' : 'Superseded'}</Text>
+          </View>
+          <View style={styles.compactMeta}>
+            <Text style={styles.metaText}>Status: {summary.fileStatus}</Text>
+            <Text style={styles.metaDivider}>/</Text>
+            <Text style={styles.metaText}>WBS: {summary.wbsCode} {summary.wbsName}</Text>
           </View>
           <View style={styles.compactMeta}>
             <Text style={styles.metaText}>Issued by: {summary.supplier ?? 'Not captured'}</Text>
@@ -705,6 +764,7 @@ export function FolderCard({
           <View style={styles.folderTitleGroup}>
             <Text style={styles.folderTitle}>{folder.label}</Text>
             <Text style={styles.folderMeta}>{folder.count} records / Updated {folder.latestUpdate}</Text>
+            {folder.description ? <Text style={styles.folderDescription}>{folder.description}</Text> : null}
           </View>
           <Text style={styles.expandText}>{expanded ? 'Collapse' : 'Expand'}</Text>
         </Pressable>
@@ -971,6 +1031,37 @@ const reminderThemes: Record<
     accentColor: '#8A6400',
     pillTone: 'cream',
   },
+};
+
+const statusPillStyles: Record<SummaryRecord['fileStatus'], ViewStyle> = {
+  Current: {
+    backgroundColor: '#EAF7F0',
+    borderColor: '#BFE7D0',
+  },
+  Superseded: {
+    backgroundColor: '#F1F1F1',
+    borderColor: '#D8D8D8',
+  },
+  Historical: {
+    backgroundColor: '#F6F4EE',
+    borderColor: '#DED6C7',
+  },
+  'Pending Review': {
+    backgroundColor: '#FFF4D8',
+    borderColor: '#F0D08C',
+  },
+  'Duplicate / Alternative Version': {
+    backgroundColor: '#FFFFFF',
+    borderColor: '#DADADA',
+  },
+};
+
+const statusPillTextStyles: Record<SummaryRecord['fileStatus'], TextStyle> = {
+  Current: { color: colors.success },
+  Superseded: { color: '#676767' },
+  Historical: { color: '#7A6A50' },
+  'Pending Review': { color: '#9A6500' },
+  'Duplicate / Alternative Version': { color: '#777777' },
 };
 
 const styles = StyleSheet.create({
@@ -1655,6 +1746,69 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  summaryPillStack: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+    maxWidth: 128,
+  },
+  propertyScopeChip: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    minHeight: 31,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: '#D8E2F0',
+    backgroundColor: '#F7FAFF',
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+  },
+  propertyScopeChipCompact: {
+    maxWidth: 230,
+    minHeight: 28,
+    paddingHorizontal: spacing.sm,
+  },
+  propertyScopeChipText: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  statusPill: {
+    minHeight: 27,
+    maxWidth: 156,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusPillText: {
+    fontFamily,
+    fontSize: 10,
+    lineHeight: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  pendingReviewBlock: {
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#F0D08C',
+    backgroundColor: '#FFF8E7',
+    padding: spacing.md,
+  },
+  pendingReviewText: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  pendingReviewActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   fields: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -2082,6 +2236,13 @@ const styles = StyleSheet.create({
     fontFamily,
     color: colors.muted,
     fontSize: 12,
+    fontWeight: '600',
+  },
+  folderDescription: {
+    fontFamily,
+    color: colors.inkSoft,
+    fontSize: 12,
+    lineHeight: 17,
     fontWeight: '600',
   },
   expandText: {

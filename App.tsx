@@ -23,9 +23,11 @@ import {
   PathChips,
   Pill,
   ProgressStep,
+  PropertyScopeChip,
   ReminderCard,
   Screen,
   SourceFilePreviewCard,
+  StatusPill,
   SummaryCard,
   UploadSheet,
 } from './src/components';
@@ -36,7 +38,10 @@ import {
   daikinSummary,
   homeAddress,
   logbookViewFolders,
+  FileStatus,
   LogbookViewName,
+  propertyScopeOptions,
+  PropertyScope,
   recentRecords,
   Reminder,
   reminders,
@@ -45,21 +50,25 @@ import {
 } from './src/mockData';
 import { colors, fontFamily, radius, softShadow, spacing, warmShadow } from './src/theme';
 
-type Stage = 'splash' | 'login' | 'main' | 'scan' | 'processing' | 'summary';
+type Stage = 'splash' | 'login' | 'main' | 'scan' | 'uploadFile' | 'uploadProcessing' | 'processing' | 'summary';
 type Tab = 'Home' | 'Logbook' | 'Chat' | 'Profile';
 type LogbookView = LogbookViewName;
 
 const tabs: Tab[] = ['Home', 'Logbook', 'Chat', 'Profile'];
-const logbookViews: LogbookView[] = ['Document Type', 'WBS', 'Trade', 'Fixture', 'Room', 'Evidence'];
+const defaultLogbookViews: LogbookView[] = ['WBS', 'Scope', 'Status', 'Document Type', 'Trade / System', 'Fixture / Asset', 'Room / Location', 'Evidence'];
+const fileStatusOptions: FileStatus[] = ['Current', 'Superseded', 'Historical', 'Pending Review', 'Duplicate / Alternative Version'];
+const logbookSearchSuggestions = ['waterproofing', 'Daikin', 'hot water', 'insurance', 'Granny Flat', 'invoice', 'warranty', 'Current', 'Duplicate'];
 const constructooLogo = require('./assets/constructoo-logo-colour.png');
 const recordById = Object.fromEntries(allRecords.map((record) => [record.id, record])) as Record<string, SummaryRecord>;
 const tabIcons: Record<Tab, IconName> = { Home: 'home', Logbook: 'logbook', Chat: 'chat', Profile: 'profile' };
 const viewIcons: Record<LogbookView, IconName> = {
-  'Document Type': 'documentType',
   WBS: 'wbs',
-  Trade: 'trade',
-  Fixture: 'fixture',
-  Room: 'room',
+  Scope: 'home',
+  Status: 'certificate',
+  'Document Type': 'documentType',
+  'Trade / System': 'trade',
+  'Fixture / Asset': 'fixture',
+  'Room / Location': 'room',
   Evidence: 'evidence',
 };
 
@@ -81,6 +90,11 @@ export default function App() {
     setTimeout(() => setStage('scan'), 220);
   };
 
+  const beginUploadFile = () => {
+    setUploadSheetVisible(false);
+    setTimeout(() => setStage('uploadFile'), 220);
+  };
+
   const openMainTab = (tab: Tab) => {
     setActiveTab(tab);
     setStage('main');
@@ -96,6 +110,14 @@ export default function App() {
 
   if (stage === 'scan') {
     return <SmartScanScreen onBack={() => setStage('main')} onConfirm={() => setStage('processing')} />;
+  }
+
+  if (stage === 'uploadFile') {
+    return <UploadFileScreen onBack={() => setStage('main')} onStartUpload={() => setStage('uploadProcessing')} />;
+  }
+
+  if (stage === 'uploadProcessing') {
+    return <UploadProcessingScreen onDone={() => setStage('summary')} />;
   }
 
   if (stage === 'processing') {
@@ -147,7 +169,7 @@ export default function App() {
         visible={uploadSheetVisible}
         onClose={() => setUploadSheetVisible(false)}
         onSmartScan={beginSmartScan}
-        onUploadFile={() => setUploadSheetVisible(false)}
+        onUploadFile={beginUploadFile}
       />
       <PathDetailModal summary={pathSummary} onClose={() => setPathSummary(null)} />
     </SafeAreaView>
@@ -369,7 +391,7 @@ function DashboardScreen({
             <View style={styles.completenessCopy}>
               <Text style={styles.sectionEyebrow}>Home Protection Completeness</Text>
               <Text style={styles.completenessText}>
-                Calculated from the number and importance of protection records uploaded for your home.
+                Current records count most toward your protection score. Pending or duplicate files are not fully counted until confirmed.
               </Text>
             </View>
             <DonutScore score={score} />
@@ -438,7 +460,7 @@ function HomeSwitchSheet({ visible, onClose }: { visible: boolean; onClose: () =
           <View style={styles.pathPanelHeader}>
             <View style={styles.pathPanelTitleGroup}>
               <Text style={styles.pathPanelTitle}>Switch home</Text>
-              <Text style={styles.pathPanelSubtitle}>Choose the property record set to view.</Text>
+              <Text style={styles.pathPanelSubtitle}>Switch between property addresses. A granny flat is added under this home, not as a separate dashboard view.</Text>
             </View>
             <CTAButton variant="quiet" small onPress={onClose}>
               Close
@@ -455,8 +477,15 @@ function HomeSwitchSheet({ visible, onClose }: { visible: boolean; onClose: () =
           <Pressable onPress={onClose} style={({ pressed }) => [styles.homeOption, pressed && styles.pressed]}>
             <AppIcon name="home" size={36} muted />
             <View style={styles.homeOptionCopy}>
-              <Text style={styles.homeOptionTitle}>Add another home</Text>
+              <Text style={styles.homeOptionTitle}>Add other home</Text>
               <Text style={styles.homeOptionMeta}>Create a separate Logbook for another Australian property.</Text>
+            </View>
+          </Pressable>
+          <Pressable onPress={onClose} style={({ pressed }) => [styles.homeOption, pressed && styles.pressed]}>
+            <AppIcon name="filePlus" size={36} muted />
+            <View style={styles.homeOptionCopy}>
+              <Text style={styles.homeOptionTitle}>Add Granny Flat to this property</Text>
+              <Text style={styles.homeOptionMeta}>Add a secondary dwelling structure under 17 Martin St.</Text>
             </View>
           </Pressable>
         </Animated.View>
@@ -746,6 +775,93 @@ function SmartScanScreen({ onBack, onConfirm }: { onBack: () => void; onConfirm:
   );
 }
 
+function UploadFileScreen({ onBack, onStartUpload }: { onBack: () => void; onStartUpload: () => void }) {
+  return (
+    <SafeAreaView style={styles.safeRoot}>
+      <StatusBar style="dark" />
+      <Screen contentStyle={styles.uploadFileContent}>
+        <TopBar title="Upload file" onBack={onBack} />
+        <Card style={styles.uploadFileCard}>
+          <View style={styles.fileDropZone}>
+            <AppIcon name="filePlus" size={52} active />
+            <Text style={styles.fileDropTitle}>File selected</Text>
+            <Text style={styles.fileDropText}>Daikin AC Service Invoice v1.pdf</Text>
+          </View>
+          <View style={styles.fileMetaGrid}>
+            <FileMeta label="File type" value="PDF" />
+            <FileMeta label="File size" value="1.2 MB" />
+            <FileMeta label="Suggested source" value="Upload file" />
+            <FileMeta label="Mock status" value="Ready to upload" />
+          </View>
+          <CTAButton onPress={onStartUpload}>Start upload</CTAButton>
+        </Card>
+      </Screen>
+    </SafeAreaView>
+  );
+}
+
+function UploadProcessingScreen({ onDone }: { onDone: () => void }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const [stepIndex, setStepIndex] = useState(0);
+  const steps = [
+    'Uploading file...',
+    'Reading document...',
+    'Extracting key details...',
+    'Checking existing records...',
+    'Suggesting smart filing path...',
+    'Creating Summary Card...',
+  ];
+
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: 1,
+      duration: 3200,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+
+    const stepTimer = setInterval(() => {
+      setStepIndex((current) => Math.min(current + 1, steps.length - 1));
+    }, 540);
+    const doneTimer = setTimeout(onDone, 3600);
+
+    return () => {
+      clearInterval(stepTimer);
+      clearTimeout(doneTimer);
+    };
+  }, [onDone, progress, steps.length]);
+
+  const progressWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+
+  return (
+    <SafeAreaView style={styles.safeRoot}>
+      <StatusBar style="dark" />
+      <Screen scroll={false} contentStyle={styles.processingContent}>
+        <View style={styles.processingCopy}>
+          <Text style={styles.processingTitle}>Uploading and reading file</Text>
+          <Text style={styles.processingText}>Daikin AC Service Invoice v1.pdf / PDF / 1.2 MB</Text>
+        </View>
+        <Card style={styles.pipelineCard}>
+          <View style={styles.progressTrack}>
+            <Animated.View style={[styles.progressFill, { width: progressWidth }]} />
+          </View>
+          <View style={styles.stepsList}>
+            {steps.map((step, index) => (
+              <ProgressStep
+                key={step}
+                label={step}
+                index={index}
+                active={index === stepIndex}
+                completed={index < stepIndex}
+              />
+            ))}
+          </View>
+        </Card>
+      </Screen>
+    </SafeAreaView>
+  );
+}
+
 function AIProcessingScreen({ onDone }: { onDone: () => void }) {
   const progress = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0)).current;
@@ -840,6 +956,8 @@ function SummaryConfirmationScreen({
 }) {
   const slide = useRef(new Animated.Value(42)).current;
   const fade = useRef(new Animated.Value(0)).current;
+  const [detectedScope, setDetectedScope] = useState<PropertyScope>(daikinSummary.propertyScope);
+  const [scopeSelectorVisible, setScopeSelectorVisible] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -853,19 +971,43 @@ function SummaryConfirmationScreen({
     ]).start();
   }, [fade, slide]);
 
+  const summaryForScope: SummaryRecord = {
+    ...daikinSummary,
+    propertyScope: detectedScope,
+    path: daikinSummary.path
+      .split(' / ')
+      .map((segment, index) => (index === 1 ? detectedScope : segment))
+      .join(' / '),
+  };
+
   return (
     <SafeAreaView style={styles.safeRoot}>
       <StatusBar style="dark" />
       <Screen contentStyle={styles.summaryScreenContent}>
         <TopBar title="AI Summary Card" onBack={onBack} />
         <Animated.View style={{ opacity: fade, transform: [{ translateY: slide }], gap: spacing.lg }}>
+          <Card style={styles.smartFilingCard}>
+            <Text style={styles.sourceLabel}>AI suggested smart filing path</Text>
+            <View style={styles.scopeConfirmTopRow}>
+              <PropertyScopeChip scope={detectedScope} compact />
+              <CTAButton variant="secondary" small onPress={() => setScopeSelectorVisible(true)}>
+                Change
+              </CTAButton>
+            </View>
+            <PathChips path={summaryForScope.path} onPress={() => onPathPress(summaryForScope)} />
+            <View style={styles.fileMetaGrid}>
+              <FileMeta label="Status" value={summaryForScope.fileStatus} />
+              <FileMeta label="AI confidence" value={summaryForScope.confidence ?? '0.91'} />
+            </View>
+          </Card>
+
           <SummaryCard
-            summary={daikinSummary}
+            summary={summaryForScope}
             variant="full"
             confirmed={confirmed}
             onConfirm={onConfirm}
-            onEdit={() => onPathPress(daikinSummary)}
-            onMove={() => onPathPress(daikinSummary)}
+            onEdit={() => onPathPress(summaryForScope)}
+            onMove={() => onPathPress(summaryForScope)}
             onPathPress={onPathPress}
           />
 
@@ -898,7 +1040,55 @@ function SummaryConfirmationScreen({
           ) : null}
         </Animated.View>
       </Screen>
+      <ScopeSelectorModal
+        visible={scopeSelectorVisible}
+        activeScope={detectedScope}
+        onSelect={(scope) => {
+          setDetectedScope(scope);
+          setScopeSelectorVisible(false);
+        }}
+        onClose={() => setScopeSelectorVisible(false)}
+      />
     </SafeAreaView>
+  );
+}
+
+function ScopeSelectorModal({
+  visible,
+  activeScope,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  activeScope: PropertyScope;
+  onSelect: (scope: PropertyScope) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.pathModalRoot}>
+        <Pressable style={styles.pathBackdrop} onPress={onClose} />
+        <View style={styles.scopeSelectorPanel}>
+          <View style={styles.pathPanelHeader}>
+            <View style={styles.pathPanelTitleGroup}>
+              <Text style={styles.pathPanelTitle}>Change Scope</Text>
+              <Text style={styles.pathPanelSubtitle}>Scope is the structure coordinate inside this property address.</Text>
+            </View>
+            <CTAButton variant="quiet" small onPress={onClose}>Close</CTAButton>
+          </View>
+          {propertyScopeOptions.map((scope) => (
+            <Pressable
+              key={scope}
+              onPress={() => onSelect(scope)}
+              style={({ pressed }) => [styles.scopeSelectorOption, activeScope === scope && styles.scopeSelectorOptionActive, pressed && styles.pressed]}
+            >
+              <Text style={styles.scopeSelectorTitle}>{scope}</Text>
+              {activeScope === scope ? <Pill tone="success">Selected</Pill> : null}
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -909,19 +1099,48 @@ function LogbookScreen({
   onPathPress: (summary: SummaryRecord) => void;
   onSummaryPress: (summary: SummaryRecord) => void;
 }) {
-  const [activeView, setActiveView] = useState<LogbookView>('Document Type');
-  const [expandedFolder, setExpandedFolder] = useState('invoices');
+  const [viewOrder, setViewOrder] = useState<LogbookView[]>(defaultLogbookViews);
+  const [hiddenViews, setHiddenViews] = useState<LogbookView[]>([]);
+  const visibleViews = viewOrder.filter((view) => !hiddenViews.includes(view));
+  const [activeView, setActiveView] = useState<LogbookView>('WBS');
+  const [expandedFolder, setExpandedFolder] = useState(logbookViewFolders.WBS[0]?.id ?? '');
+  const [manageViewsVisible, setManageViewsVisible] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
   const folders = logbookViewFolders[activeView];
+  const moveView = (view: LogbookView, direction: -1 | 1) => {
+    setViewOrder((current) => {
+      const index = current.indexOf(view);
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  };
+  const toggleView = (view: LogbookView) => {
+    setHiddenViews((current) => {
+      const next = current.includes(view) ? current.filter((item) => item !== view) : [...current, view];
+      if (activeView === view && !current.includes(view)) {
+        const fallback = viewOrder.find((item) => item !== view && !next.includes(item)) ?? 'WBS';
+        setActiveView(fallback);
+        setExpandedFolder(logbookViewFolders[fallback][0]?.id ?? '');
+      }
+      return next;
+    });
+  };
 
   return (
     <Screen contentStyle={styles.logbookContent}>
-      <View style={styles.screenHeader}>
-        <Text style={styles.productName}>Logbook</Text>
-        <Text style={styles.screenSubtitle}>View your uploaded files and photos from different angles.</Text>
+      <View style={styles.logbookHeaderRow}>
+        <View style={[styles.screenHeader, styles.logbookHeaderCopy]}>
+          <Text style={styles.productName}>Logbook</Text>
+          <Text style={styles.screenSubtitle}>View your uploaded files and photos from different angles.</Text>
+        </View>
+        <LogbookSearchButton onPress={() => setSearchVisible(true)} />
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.segmented}>
-        {logbookViews.map((view) => {
+        {visibleViews.map((view) => {
           const selected = activeView === view;
           return (
             <Pressable
@@ -937,6 +1156,14 @@ function LogbookScreen({
             </Pressable>
           );
         })}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Manage Logbook Views"
+          onPress={() => setManageViewsVisible(true)}
+          style={({ pressed }) => [styles.viewSettingsButton, pressed && styles.pressed]}
+        >
+          <SettingsGearIcon />
+        </Pressable>
       </ScrollView>
 
       <View style={styles.folderList}>
@@ -954,7 +1181,436 @@ function LogbookScreen({
           />
         ))}
       </View>
+      <ManageLogbookViewsSheet
+        visible={manageViewsVisible}
+        viewOrder={viewOrder}
+        hiddenViews={hiddenViews}
+        onToggle={toggleView}
+        onMove={moveView}
+        onReset={() => {
+          setViewOrder(defaultLogbookViews);
+          setHiddenViews([]);
+          setActiveView('WBS');
+          setExpandedFolder(logbookViewFolders.WBS[0]?.id ?? '');
+        }}
+        onClose={() => setManageViewsVisible(false)}
+      />
+      <LogbookSearchModal
+        visible={searchVisible}
+        onClose={() => setSearchVisible(false)}
+        onOpenRecord={(record) => {
+          setSearchVisible(false);
+          setTimeout(() => onSummaryPress(record), 80);
+        }}
+      />
     </Screen>
+  );
+}
+
+function LogbookSearchButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Search Logbook"
+      onPress={onPress}
+      style={({ pressed }) => [styles.logbookSearchButton, pressed && styles.logbookSearchButtonPressed]}
+    >
+      <SearchGlyph />
+    </Pressable>
+  );
+}
+
+function SearchGlyph() {
+  return (
+    <View style={styles.searchGlyph}>
+      <View style={styles.searchGlyphCircle} />
+      <View style={styles.searchGlyphHandle} />
+    </View>
+  );
+}
+
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function searchableTextForRecord(record: SummaryRecord) {
+  const aliases = [
+    record.recordGroup.includes('Daikin') || record.title.includes('Daikin') ? 'aircon air conditioner air conditioning ac hvac' : '',
+    record.recordGroup.toLowerCase().includes('hot water') || record.title.toLowerCase().includes('hot water') ? 'water heater plumbing' : '',
+    record.propertyScope === 'Granny Flat' ? 'granny secondary dwelling' : '',
+    record.fileStatus === 'Duplicate / Alternative Version' ? 'duplicate alternative version copy repeated scan' : '',
+  ];
+
+  return normalizeSearchText(
+    [
+      record.title,
+      record.fileName,
+      record.documentType,
+      record.supplier,
+      record.propertyScope,
+      record.wbsCode,
+      record.wbsName,
+      record.recordGroup,
+      record.asset,
+      record.path,
+      record.tags.join(' '),
+      record.fileStatus,
+      record.status,
+      record.amount,
+      aliases.join(' '),
+    ]
+      .filter(Boolean)
+      .join(' ')
+  );
+}
+
+function LogbookSearchModal({
+  visible,
+  onClose,
+  onOpenRecord,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onOpenRecord: (record: SummaryRecord) => void;
+}) {
+  const [query, setQuery] = useState('');
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchScrollRef = useRef<ScrollView | null>(null);
+  const normalizedDraftQuery = normalizeSearchText(query);
+  const submittedTerms = normalizeSearchText(submittedQuery).split(' ').filter(Boolean);
+  const results = useMemo(() => {
+    if (!submittedTerms.length) return [];
+    return allRecords.filter((record) => {
+      const searchableText = searchableTextForRecord(record);
+      return submittedTerms.every((term) => searchableText.includes(term));
+    });
+  }, [submittedTerms]);
+  const hasDraftQuery = normalizedDraftQuery.length > 0;
+  const hasSearched = !searching && submittedTerms.length > 0;
+  const readyToSearch = hasDraftQuery && !searching && normalizeSearchText(submittedQuery) !== normalizedDraftQuery;
+  const showEmpty = hasSearched && results.length === 0;
+
+  const clearSearchTimer = () => {
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+  };
+
+  const handleQueryChange = (value: string) => {
+    clearSearchTimer();
+    setQuery(value);
+    setSearching(false);
+    setSubmittedQuery('');
+  };
+
+  const runSearch = (value = query) => {
+    const trimmedValue = value.trim();
+    if (!normalizeSearchText(trimmedValue) || searching) return;
+    clearSearchTimer();
+    setQuery(trimmedValue);
+    setSubmittedQuery('');
+    setSearching(true);
+    setShowScrollTop(false);
+    searchScrollRef.current?.scrollTo({ y: 0, animated: true });
+    searchTimer.current = setTimeout(() => {
+      setSubmittedQuery(trimmedValue);
+      setSearching(false);
+      searchTimer.current = null;
+    }, 3000);
+  };
+
+  useEffect(() => {
+    if (!visible) {
+      clearSearchTimer();
+      setQuery('');
+      setSubmittedQuery('');
+      setSearching(false);
+      setShowScrollTop(false);
+    }
+    return clearSearchTimer;
+  }, [visible]);
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+      <SafeAreaView style={styles.searchModalRoot}>
+        <StatusBar style="dark" />
+        <View style={styles.searchPanel}>
+          <View style={styles.searchHeader}>
+            <CTAButton variant="quiet" small onPress={onClose}>Back</CTAButton>
+            <View style={styles.searchHeaderTitleGroup}>
+              <Text style={styles.pathPanelTitle}>Search Logbook</Text>
+            </View>
+            <View style={styles.searchHeaderSpacer} />
+          </View>
+
+          <View style={styles.searchInputWrap}>
+            <SearchGlyph />
+            <TextInput
+              value={query}
+              onChangeText={handleQueryChange}
+              placeholder="Search Summary Cards, file names and generated records."
+              placeholderTextColor={colors.muted}
+              style={styles.searchInput}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              onSubmitEditing={() => runSearch()}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Run Logbook Search"
+              disabled={!hasDraftQuery || searching}
+              onPress={() => runSearch()}
+              style={({ pressed }) => [
+                styles.searchSubmitButton,
+                (!hasDraftQuery || searching) && styles.searchSubmitButtonDisabled,
+                pressed && hasDraftQuery && !searching && styles.pressed,
+              ]}
+            >
+              <Text style={[styles.searchSubmitText, (!hasDraftQuery || searching) && styles.searchSubmitTextDisabled]}>
+                Search
+              </Text>
+            </Pressable>
+          </View>
+
+          {!hasDraftQuery ? (
+            <ScrollView
+              horizontal
+              style={styles.searchSuggestionScroller}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.searchSuggestionRow}
+            >
+              {logbookSearchSuggestions.map((suggestion) => (
+                <Pressable
+                  key={suggestion}
+                  onPress={() => {
+                    setQuery(suggestion);
+                    runSearch(suggestion);
+                  }}
+                  style={({ pressed }) => [styles.searchSuggestionChip, pressed && styles.pressed]}
+                >
+                  <Text style={styles.searchSuggestionText}>{suggestion}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
+
+          <ScrollView
+            ref={searchScrollRef}
+            style={styles.searchResultsScroll}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.searchResultsList}
+            scrollEventThrottle={16}
+            onScroll={(event) => setShowScrollTop(event.nativeEvent.contentOffset.y > 180)}
+          >
+            {!hasDraftQuery && !searching && !hasSearched ? (
+              <Card style={styles.searchStartCard}>
+                <Text style={styles.searchEmptyTitle}>Search your Home Logbook</Text>
+                <Text style={styles.searchEmptyText}>Try supplier names, room names, fixture names, document types or status terms.</Text>
+              </Card>
+            ) : null}
+
+            {readyToSearch ? (
+              <Card style={styles.searchStartCard}>
+                <Text style={styles.searchEmptyTitle}>Ready to search</Text>
+                <Text style={styles.searchEmptyText}>Tap Search to scan your Summary Cards, file names and generated records.</Text>
+              </Card>
+            ) : null}
+
+            {searching ? <SearchLoadingState query={query} /> : null}
+
+            {hasSearched && results.length ? (
+              <Text style={styles.searchResultsSummary}>
+                Showing {results.length} {results.length === 1 ? 'result' : 'results'} for "{submittedQuery}"
+              </Text>
+            ) : null}
+
+            {hasSearched ? results.map((record) => (
+              <SearchResultCard key={record.id} record={record} onOpen={() => onOpenRecord(record)} />
+            )) : null}
+
+            {showEmpty ? (
+              <View style={styles.searchEmptyState}>
+                <Text style={styles.searchEmptyTitle}>No matching records found</Text>
+                <Text style={styles.searchEmptyText}>Try searching by file name, supplier, room, fixture, trade or document type.</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          <ScrollTopButton
+            visible={showScrollTop}
+            onPress={() => searchScrollRef.current?.scrollTo({ y: 0, animated: true })}
+          />
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+function SearchLoadingState({ query }: { query: string }) {
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 900,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [spin]);
+
+  const rotate = spin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  return (
+    <Card style={styles.searchLoadingCard}>
+      <Animated.View style={[styles.searchLoadingSpinner, { transform: [{ rotate }] }]} />
+      <View style={styles.searchLoadingCopy}>
+        <Text style={styles.searchEmptyTitle}>Searching "{query}"</Text>
+        <Text style={styles.searchEmptyText}>Checking Summary Cards, file names and home record paths.</Text>
+      </View>
+    </Card>
+  );
+}
+
+function ScrollTopButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
+  if (!visible) return null;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Return to top"
+      onPress={onPress}
+      style={({ pressed }) => [styles.scrollTopButton, pressed && styles.pressed]}
+    >
+      <View style={styles.scrollTopGlyph}>
+        <View style={styles.scrollTopStem} />
+        <View style={styles.scrollTopWingLeft} />
+        <View style={styles.scrollTopWingRight} />
+      </View>
+    </Pressable>
+  );
+}
+
+function SearchResultCard({ record, onOpen }: { record: SummaryRecord; onOpen: () => void }) {
+  const tagPreview = record.tags.slice(0, 4);
+
+  return (
+    <Card style={styles.searchResultCard}>
+      <View style={styles.searchResultHeader}>
+        <View style={styles.searchResultTitleGroup}>
+          <Text style={styles.searchResultTitle}>{record.title}</Text>
+          <Text style={styles.searchResultMeta}>
+            {record.documentType}{record.supplier ? ` / ${record.supplier}` : ''}
+          </Text>
+        </View>
+        <StatusPill status={record.fileStatus} />
+      </View>
+
+      <PropertyScopeChip scope={record.propertyScope} compact />
+      <Text style={styles.searchPathPreview} numberOfLines={2}>{record.path}</Text>
+
+      <View style={styles.searchTagRow}>
+        {tagPreview.map((tag) => (
+          <Pill key={tag} tone={tag.toLowerCase().includes('duplicate') ? 'neutral' : 'cream'}>{tag}</Pill>
+        ))}
+      </View>
+
+      <View style={styles.searchResultFooter}>
+        <Text style={styles.searchResultDate}>Updated {record.uploadedDate}</Text>
+        <CTAButton small onPress={onOpen}>Open</CTAButton>
+      </View>
+    </Card>
+  );
+}
+
+function ManageLogbookViewsSheet({
+  visible,
+  viewOrder,
+  hiddenViews,
+  onToggle,
+  onMove,
+  onReset,
+  onClose,
+}: {
+  visible: boolean;
+  viewOrder: LogbookView[];
+  hiddenViews: LogbookView[];
+  onToggle: (view: LogbookView) => void;
+  onMove: (view: LogbookView, direction: -1 | 1) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal transparent visible={visible} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.pathModalRoot}>
+        <Pressable style={styles.pathBackdrop} onPress={onClose} />
+        <View style={styles.manageViewsPanel}>
+          <View style={styles.pathPanelHeader}>
+            <View style={styles.pathPanelTitleGroup}>
+              <Text style={styles.pathPanelTitle}>Manage Logbook Views</Text>
+              <Text style={styles.pathPanelSubtitle}>Show, hide and reorder the mocked Logbook view tabs.</Text>
+            </View>
+            <CTAButton variant="quiet" small onPress={onClose}>Done</CTAButton>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.manageViewsList}>
+            {viewOrder.map((view, index) => {
+              const enabled = !hiddenViews.includes(view);
+              return (
+                <View key={view} style={styles.manageViewRow}>
+                  <DragHandleIcon />
+                  <View style={styles.manageViewCopy}>
+                    <Text style={styles.manageViewTitle}>{view}</Text>
+                    <Text style={styles.manageViewMeta}>{enabled ? 'Visible in Logbook tabs' : 'Hidden from Logbook tabs'}</Text>
+                  </View>
+                  <View style={styles.reorderButtons}>
+                    <CTAButton variant="quiet" small onPress={() => onMove(view, -1)} disabled={index === 0}>Up</CTAButton>
+                    <CTAButton variant="quiet" small onPress={() => onMove(view, 1)} disabled={index === viewOrder.length - 1}>Down</CTAButton>
+                  </View>
+                  <Pressable onPress={() => onToggle(view)} style={({ pressed }) => [styles.iosSwitch, enabled && styles.iosSwitchActive, pressed && styles.pressed]}>
+                    <View style={[styles.iosSwitchKnob, enabled && styles.iosSwitchKnobActive]} />
+                  </Pressable>
+                </View>
+              );
+            })}
+          </ScrollView>
+
+          <CTAButton variant="secondary" onPress={onReset}>Reset to default</CTAButton>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SettingsGearIcon() {
+  return (
+    <View style={styles.settingsGear}>
+      <View style={styles.settingsGearCircle} />
+      <View style={[styles.settingsGearTooth, styles.settingsGearToothA]} />
+      <View style={[styles.settingsGearTooth, styles.settingsGearToothB]} />
+      <View style={[styles.settingsGearTooth, styles.settingsGearToothC]} />
+    </View>
+  );
+}
+
+function DragHandleIcon() {
+  return (
+    <View style={styles.dragHandleIcon}>
+      <View style={styles.dragHandleLine} />
+      <View style={styles.dragHandleLine} />
+      <View style={styles.dragHandleLine} />
+    </View>
   );
 }
 
@@ -975,10 +1631,14 @@ function ChatScreen({
   onOpenSummary: (summary: SummaryRecord) => void;
   onOpenAccount: () => void;
 }) {
-  const waterproofing = recordById['waterproofing-certificate'];
-  const kitchenQuote = recordById['kitchen-cabinetry-quote'];
+  const daikinCurrent = recordById['daikin-service-current'];
+  const daikinPending = recordById['daikin-invoice'];
+  const daikinSuperseded = recordById['daikin-service-superseded'];
+  const daikinHistorical = recordById['daikin-service-historical'];
+  const daikinDuplicate = recordById['dakin-aircon-duplicate'];
+  const daikinRecords = [daikinCurrent, daikinPending, daikinSuperseded, daikinHistorical, daikinDuplicate].filter(Boolean);
   const fullAnswer =
-    'I found your Bathroom Waterproofing Certificate in your Home Logbook. It was issued by BlueSeal Waterproofing and covers polyurethane waterproofing works for wet areas. The certificate states a 5 year warranty and notes that the works were completed in accordance with the contract drawings and specifications.';
+    'Your latest confirmed Daikin Ducted AC service record is Daikin AC Service Invoice v2.pdf. Its Status is Current, so I use it before older, pending, superseded or duplicate files when answering last-serviced questions.';
   const words = useMemo(() => fullAnswer.split(' '), [fullAnswer]);
   const [streamCount, setStreamCount] = useState(0);
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -1043,23 +1703,33 @@ function ChatScreen({
           <AISuggestionStarIcon />
         </View>
 
-        <ChatBubble sender="user">Can you check my bathroom waterproofing certificate?</ChatBubble>
+        <ChatBubble sender="user">When was my Daikin AC last serviced?</ChatBubble>
         <ChatBubble sender="assistant" style={styles.assistantAnswer}>
           {streamCount === 0 ? <TypingIndicator /> : <Text style={styles.assistantText}>{streamedAnswer}</Text>}
         </ChatBubble>
 
-        {showSource && waterproofing ? (
-          <ChatSourceCard summary={waterproofing} buttonLabel="View source file" onPress={() => onOpenSummary(waterproofing)} />
+        {showSource && daikinCurrent ? (
+          <ChatSourceCard summary={daikinCurrent} buttonLabel="View Current record" onPress={() => onOpenSummary(daikinCurrent)} />
         ) : null}
 
-        <ChatBubble sender="user">Find my kitchen cabinetry quote.</ChatBubble>
+        <ChatBubble sender="user">Show all Daikin AC service records.</ChatBubble>
         <ChatBubble sender="assistant" style={styles.assistantAnswer}>
           <Text style={styles.assistantText}>
-            I found the Kitchen Cabinetry Quote issued by Northside Joinery Studio for AUD 18,750.00. It is stored under Fixtures, Fittings, Joinery & Built-in Appliances / Joinery / Kitchen Cabinetry / Quote.
+            I found Current, Pending Review, Superseded, Historical and Duplicate / Alternative Version Daikin AC records. Current is the source of truth; the others are kept for review, audit history or version comparison.
           </Text>
         </ChatBubble>
-        {kitchenQuote ? (
-          <ChatSourceCard summary={kitchenQuote} buttonLabel="View Summary Card" onPress={() => onOpenSummary(kitchenQuote)} />
+        {daikinRecords.slice(0, 4).map((record) => (
+          <ChatSourceCard key={record.id} summary={record} buttonLabel="View Summary Card" onPress={() => onOpenSummary(record)} />
+        ))}
+
+        <ChatBubble sender="user">Do I have duplicate Daikin AC files?</ChatBubble>
+        <ChatBubble sender="assistant" style={styles.assistantAnswer}>
+          <Text style={styles.assistantText}>
+            Yes. I found Dakin Aircon service record 01.pdf with Status: Duplicate / Alternative Version. It is kept in the Logbook, but it does not double-count in Home Protection or become the default source unless you ask for all versions.
+          </Text>
+        </ChatBubble>
+        {daikinDuplicate ? (
+          <ChatSourceCard summary={daikinDuplicate} buttonLabel="View duplicate file" onPress={() => onOpenSummary(daikinDuplicate)} />
         ) : null}
       </ScrollView>
 
@@ -1163,6 +1833,11 @@ function ChatSourceCard({
           <Text style={styles.sourceTitle}>{summary.title}</Text>
           {summary.amount ? <Text style={styles.sourceAmount}>{summary.amount}</Text> : null}
         </View>
+        <StatusPill status={summary.fileStatus} />
+      </View>
+      <View style={styles.chatSourceMetaRow}>
+        <PropertyScopeChip scope={summary.propertyScope} compact />
+        <Text style={styles.chatSourceVersion}>{summary.version} / {summary.latest ? 'Latest version' : 'Older version'}</Text>
       </View>
       <PathChips path={summary.path} onPress={onPress} />
       <CTAButton variant="secondary" small onPress={onPress} style={styles.sourceButton}>
@@ -1214,7 +1889,7 @@ function ChatHistoryDrawer({
 
           <View style={styles.drawerNav}>
             <DrawerNavRow icon="chat" label="Chats" active />
-            <DrawerNavRow icon="files" label="Logbook Files" />
+            <DrawerNavRow icon="files" label="Projects" />
             <DrawerNavRow icon="star" label="Starred" />
           </View>
 
@@ -1511,6 +2186,24 @@ function TypingIndicator() {
 }
 
 type ProfileView = 'main' | 'homeEdit' | 'history' | 'subscription' | 'switchAccount';
+type PropertySectionId = 'whole' | 'main' | 'granny' | 'fixtures' | 'services';
+
+type PropertySummaryItem = {
+  title: string;
+  meta?: string;
+  fields: [string, string][];
+};
+
+type PropertySummarySection = {
+  id: PropertySectionId;
+  title: string;
+  summary: string;
+  pill?: string;
+  fields?: [string, string][];
+  items?: PropertySummaryItem[];
+  editFields?: [string, string][];
+  editActions?: string[];
+};
 
 const homeEditFields = [
   ['Address', homeAddress],
@@ -1549,6 +2242,213 @@ const historyItems = [
   ['24 Jun 2026, 2:30 PM', 'Kitchen Cabinetry Quote updated to version v2', 'Latest version'],
 ];
 
+const hasGrannyFlat = true;
+
+const propertySummarySections: PropertySummarySection[] = [
+  {
+    id: 'whole',
+    title: 'Whole Property',
+    summary: 'Council, zoning, rates and shared site records',
+    pill: 'Site level',
+    fields: [
+      ['Property address', homeAddress],
+      ['Council', 'Cumberland City Council'],
+      ['Ownership start date', '12 Mar 2021'],
+      ['Zoning', 'R2 Low Density Residential'],
+      ['Land size', '520 m2'],
+      ['Council rates', 'AUD 1,680 / year'],
+      ['Building insurance', 'Harbour Mutual Insurance'],
+      ['Shared driveway', 'Yes'],
+      ['Shared drainage', 'Yes'],
+    ],
+    editFields: [
+      ['Council', 'Cumberland City Council'],
+      ['Ownership start date', '12 Mar 2021'],
+      ['Lot / plan information', 'Lot 42 / DP 1182047'],
+      ['Zoning', 'R2 Low Density Residential'],
+      ['Land size', '520 m2'],
+      ['Council rates', 'AUD 1,680 / year'],
+      ['Strata / body corporate', 'Not applicable'],
+      ['Shared systems', 'Shared driveway, drainage and external access'],
+      ['Notes', 'Whole-property records support insurance, council, site access and shared services context.'],
+    ],
+  },
+  {
+    id: 'main',
+    title: 'Main Dwelling',
+    summary: 'Primary dwelling structure and protection snapshot',
+    pill: '68% protected',
+    fields: [
+      ['Structure name', 'Main Dwelling'],
+      ['Structure type', 'Primary dwelling'],
+      ['Year built', '1985'],
+      ['Floor area', '186 m2'],
+      ['Bedrooms', '4'],
+      ['Bathrooms', '2'],
+      ['Car spaces', '2'],
+      ['Storeys', '2'],
+      ['Construction type', 'Brick veneer'],
+      ['Roof type', 'Colorbond metal roof'],
+      ['External wall material', 'Brick / rendered finish'],
+      ['Protection completeness', '68%'],
+    ],
+    editFields: [
+      ['Structure name', 'Main Dwelling'],
+      ['Year built', '1985'],
+      ['Floor area', '186 m2'],
+      ['Bedrooms', '4'],
+      ['Bathrooms', '2'],
+      ['Car spaces', '2'],
+      ['Storeys', '2'],
+      ['Construction type', 'Brick veneer'],
+      ['Roof type', 'Colorbond metal roof'],
+      ['External wall material', 'Brick / rendered finish'],
+      ['Notes', 'Primary home record used for maintenance, warranty and fixture summaries.'],
+    ],
+  },
+  {
+    id: 'granny',
+    title: 'Granny Flat',
+    summary: 'Secondary dwelling under the same property',
+    pill: '54% protected',
+    fields: hasGrannyFlat
+      ? [
+          ['Structure name', 'Granny Flat'],
+          ['Structure type', 'Secondary dwelling'],
+          ['Year built', '2022'],
+          ['Floor area', '60 m2'],
+          ['Bedrooms', '2'],
+          ['Bathrooms', '1'],
+          ['Kitchen', 'Yes'],
+          ['Laundry', 'Yes'],
+          ['Separate hot water system', 'Yes'],
+          ['Separate electrical meter', 'No'],
+          ['Tenanted', 'Yes'],
+          ['Protection completeness', '54%'],
+        ]
+      : [],
+    editFields: [
+      ['Structure name', 'Granny Flat'],
+      ['Year built', '2022'],
+      ['Floor area', '60 m2'],
+      ['Bedrooms', '2'],
+      ['Bathrooms', '1'],
+      ['Kitchen', 'Yes'],
+      ['Laundry', 'Yes'],
+      ['Separate hot water system', 'Yes'],
+      ['Separate electrical meter', 'No'],
+      ['Tenanted', 'Yes'],
+      ['Notes', 'Separate structure under the same property, not a room of the main dwelling.'],
+    ],
+  },
+  {
+    id: 'fixtures',
+    title: 'Registered Fixtures',
+    summary: '4 important fixtures recorded',
+    pill: '4 assets',
+    items: [
+      {
+        title: 'Daikin Ducted AC',
+        meta: 'HVAC / Main Dwelling',
+        fields: [
+          ['Type', 'HVAC'],
+          ['Scope', 'Main Dwelling'],
+          ['Installed', '2023'],
+          ['Warranty', 'Current'],
+          ['Last service', '22 Jun 2026'],
+        ],
+      },
+      {
+        title: 'Rheem Hot Water System',
+        meta: 'Hot Water System / Main Dwelling',
+        fields: [
+          ['Type', 'Hot Water System'],
+          ['Scope', 'Main Dwelling'],
+          ['Installed', '2021'],
+          ['Warranty', 'Current'],
+        ],
+      },
+      {
+        title: 'Rinnai Hot Water System',
+        meta: 'Hot Water System / Granny Flat',
+        fields: [
+          ['Type', 'Hot Water System'],
+          ['Scope', 'Granny Flat'],
+          ['Installed', '2022'],
+          ['Warranty', 'Current'],
+        ],
+      },
+      {
+        title: 'Kitchen Cabinetry',
+        meta: 'Joinery / Main Dwelling',
+        fields: [
+          ['Type', 'Joinery'],
+          ['Scope', 'Main Dwelling'],
+          ['Installed', '2024'],
+          ['Evidence', 'Invoice attached'],
+        ],
+      },
+    ],
+    editActions: ['Add fixture', 'Edit fixture', 'Remove fixture', 'Link source file', 'Link warranty', 'Link service record'],
+  },
+  {
+    id: 'services',
+    title: 'My Services',
+    summary: '4 recurring service relationships found',
+    pill: '4 services',
+    items: [
+      {
+        title: 'HVAC service provider',
+        fields: [
+          ['Provider', 'AirPro Mechanical Services'],
+          ['Linked asset', 'Daikin Ducted AC'],
+          ['Next due', '22 Jun 2027'],
+        ],
+      },
+      {
+        title: 'Hot water service provider',
+        fields: [
+          ['Provider', 'Sydney Plumbing Care'],
+          ['Linked asset', 'Rheem Hot Water System'],
+          ['Next due', '15 Sep 2026'],
+        ],
+      },
+      {
+        title: 'Water filter service provider',
+        fields: [
+          ['Provider', 'PureFlow Water'],
+          ['Next due', '03 Nov 2026'],
+        ],
+      },
+      {
+        title: 'Termite protection service',
+        fields: [
+          ['Provider', 'SafePest Australia'],
+          ['Next due', '18 Jan 2027'],
+        ],
+      },
+    ],
+    editActions: ['Add service provider', 'Edit service provider', 'Link to fixture', 'Set next service due date', 'Link reminder', 'Remove service provider'],
+  },
+];
+
+const dataExportOptions = [
+  'Export all Home Logbook data',
+  'Export Summary Cards',
+  'Export source file list',
+  'Export activity history',
+  'Export AI-generated reports',
+];
+
+const aiReportSummaries = [
+  ['Home Protection Completeness Report', '05 Jul 2026', 'Status-weighted view of current, pending and duplicate evidence.'],
+  ['Warranty & Reminder Summary', '02 Jul 2026', 'Upcoming warranty expiries and service reminders across the home.'],
+  ['Registered Fixtures Summary', '28 Jun 2026', 'AI-generated fixture register for important fixed assets.'],
+  ['Maintenance History Summary', '28 Jun 2026', 'Timeline of service records, invoices and historical maintenance.'],
+  ['Insurance Evidence Summary', '25 Jun 2026', 'Evidence pack for policies, certificates and repair invoices.'],
+  ['Granny Flat Records Summary', '24 Jun 2026', 'Secondary dwelling record summary under the same property.'],
+];
+
 function ProfileScreen({ onOpenAccount }: { onOpenAccount: () => void }) {
   const [view, setView] = useState<ProfileView>('main');
 
@@ -1584,21 +2484,7 @@ function ProfileScreen({ onOpenAccount }: { onOpenAccount: () => void }) {
         </View>
       </Card>
 
-      <Card style={styles.myHomeCard}>
-        <View style={styles.profileCardHeader}>
-          <Pill tone="navy">My Home</Pill>
-          <CTAButton variant="secondary" small onPress={() => setView('homeEdit')}>
-            Edit
-          </CTAButton>
-        </View>
-        <Text style={styles.profileAddress}>{homeAddress}</Text>
-        <View style={styles.profileStats}>
-          <ProfileStat label="Property type" value="Detached house" />
-          <ProfileStat label="Ownership" value="Owner occupier" />
-          <ProfileStat label="Records" value="24" />
-          <ProfileStat label="Protection completeness" value="68%" />
-        </View>
-      </Card>
+      <PropertySummaryPanel />
 
       <View style={styles.settingsList}>
         <ProfileMenuItem title="Account" detail="Demo Homeowner / Charlie" onPress={onOpenAccount} />
@@ -1608,6 +2494,190 @@ function ProfileScreen({ onOpenAccount }: { onOpenAccount: () => void }) {
         <ProfileMenuItem title="Switch account" detail="Change user or log out" onPress={() => setView('switchAccount')} />
       </View>
     </Screen>
+  );
+}
+
+function PropertySummaryPanel() {
+  const [expandedSections, setExpandedSections] = useState<Record<PropertySectionId, boolean>>({
+    whole: false,
+    main: false,
+    granny: false,
+    fixtures: false,
+    services: false,
+  });
+  const [editingSection, setEditingSection] = useState<PropertySummarySection | null>(null);
+  const visibleSections = propertySummarySections.filter((section) => {
+    const hasFields = Boolean(section.fields?.length);
+    const hasItems = Boolean(section.items?.length);
+    return hasFields || hasItems;
+  });
+
+  return (
+    <Card style={styles.propertySummaryPanel}>
+      <View style={styles.profileCardHeader}>
+        <View style={styles.propertyTitleGroup}>
+          <Pill tone="navy">My Home</Pill>
+          <Text style={styles.propertySummaryTitle}>Property Summary</Text>
+        </View>
+        <Pill tone="cream">AI summary</Pill>
+      </View>
+
+      <Text style={styles.profileAddress}>{homeAddress}</Text>
+      <View style={styles.profileStats}>
+        <ProfileStat label="Protection completeness" value="68%" />
+        <ProfileStat label="Records" value="24" />
+        <ProfileStat label="Fixtures" value="4" />
+        <ProfileStat label="Structures" value={hasGrannyFlat ? '2' : '1'} />
+      </View>
+
+      <View style={styles.aiSummaryNotice}>
+        <AISuggestionStarIcon />
+        <Text style={styles.aiSummaryNoticeText}>AI summarised from your uploaded records. You can edit any section.</Text>
+      </View>
+
+      <View style={styles.propertySectionList}>
+        {visibleSections.map((section) => (
+          <CollapsiblePropertySection
+            key={section.id}
+            section={section}
+            expanded={Boolean(expandedSections[section.id])}
+            onToggle={() =>
+              setExpandedSections((current) => ({
+                ...current,
+                [section.id]: !current[section.id],
+              }))
+            }
+            onEdit={() => setEditingSection(section)}
+          />
+        ))}
+      </View>
+
+      <SectionEditModal section={editingSection} onClose={() => setEditingSection(null)} />
+    </Card>
+  );
+}
+
+function CollapsiblePropertySection({
+  section,
+  expanded,
+  onToggle,
+  onEdit,
+}: {
+  section: PropertySummarySection;
+  expanded: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+}) {
+  return (
+    <View style={styles.propertySectionCard}>
+      <Pressable onPress={onToggle} style={({ pressed }) => [styles.propertySectionHeader, pressed && styles.pressed]}>
+        <View style={styles.propertySectionHeaderCopy}>
+          <Text style={styles.propertySectionTitle}>{section.title}</Text>
+          <Text style={styles.propertySectionSummary}>{section.summary}</Text>
+        </View>
+        {section.pill ? <Pill tone={section.id === 'main' || section.id === 'granny' ? 'cream' : 'neutral'}>{section.pill}</Pill> : null}
+        <Text style={styles.propertySectionToggle}>{expanded ? 'Collapse' : 'Expand'}</Text>
+      </Pressable>
+
+      {expanded ? (
+        <View style={styles.propertySectionBody}>
+          {section.fields?.length ? <PropertyFieldGrid fields={section.fields} /> : null}
+          {section.items?.length ? (
+            <View style={styles.propertyItemList}>
+              {section.items.map((item) => (
+                <View key={item.title} style={styles.propertyItemCard}>
+                  <View style={styles.propertyItemHeader}>
+                    <Text style={styles.propertyItemTitle}>{item.title}</Text>
+                    {item.meta ? <Text style={styles.propertyItemMeta}>{item.meta}</Text> : null}
+                  </View>
+                  <PropertyFieldGrid fields={item.fields} compact />
+                </View>
+              ))}
+            </View>
+          ) : null}
+          <CTAButton variant="secondary" small onPress={onEdit} style={styles.propertySectionEditButton}>
+            Edit
+          </CTAButton>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function PropertyFieldGrid({ fields, compact = false }: { fields: [string, string][]; compact?: boolean }) {
+  return (
+    <View style={[styles.propertyFieldGrid, compact && styles.propertyFieldGridCompact]}>
+      {fields.map(([label, value]) => (
+        <View key={`${label}-${value}`} style={[styles.propertyField, compact && styles.propertyFieldCompact]}>
+          <Text style={styles.propertyFieldLabel}>{label}</Text>
+          <Text style={styles.propertyFieldValue}>{value}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function SectionEditModal({ section, onClose }: { section: PropertySummarySection | null; onClose: () => void }) {
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setSaved(false);
+  }, [section?.id]);
+
+  return (
+    <Modal transparent visible={Boolean(section)} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.pathModalRoot}>
+        <Pressable style={styles.pathBackdrop} onPress={onClose} />
+        <View style={styles.sectionEditPanel}>
+          {section ? (
+            <>
+              <View style={styles.pathPanelHeader}>
+                <View style={styles.pathPanelTitleGroup}>
+                  <Text style={styles.pathPanelTitle}>Edit {section.title}</Text>
+                  <Text style={styles.pathPanelSubtitle}>Mock edit controls for this property summary section.</Text>
+                </View>
+                <CTAButton variant="quiet" small onPress={onClose}>Close</CTAButton>
+              </View>
+
+              {saved ? (
+                <Card style={styles.saveNotice}>
+                  <Text style={styles.saveNoticeTitle}>Section saved</Text>
+                  <Text style={styles.saveNoticeText}>This prototype keeps {section.title} changes as mocked data.</Text>
+                </Card>
+              ) : null}
+
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sectionEditContent}>
+                {section.editFields?.length ? (
+                  <Card style={styles.editFormCard}>
+                    {section.editFields.map(([label, value]) => (
+                      <MockEditField key={label} label={label} value={value} multiline={label === 'Notes'} />
+                    ))}
+                  </Card>
+                ) : null}
+
+                {section.editActions?.length ? (
+                  <Card style={styles.editFormCard}>
+                    <Text style={styles.historyIntroTitle}>Mock actions</Text>
+                    <View style={styles.sectionActionGrid}>
+                      {section.editActions.map((action) => (
+                        <CTAButton key={action} variant="secondary" small style={styles.sectionActionButton}>
+                          {action}
+                        </CTAButton>
+                      ))}
+                    </View>
+                  </Card>
+                ) : null}
+              </ScrollView>
+
+              <View style={styles.editActionRow}>
+                <CTAButton onPress={() => setSaved(true)} style={styles.editActionButton}>Save changes</CTAButton>
+                <CTAButton variant="secondary" onPress={onClose} style={styles.editActionButton}>Cancel</CTAButton>
+              </View>
+            </>
+          ) : null}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1649,7 +2719,12 @@ function MyHomeEditScreen({ onBack }: { onBack: () => void }) {
 }
 
 function AccountSettingsScreen({ onBack }: { onBack: () => void }) {
+  const [view, setView] = useState<'settings' | 'myData'>('settings');
   const [saved, setSaved] = useState(false);
+
+  if (view === 'myData') {
+    return <MyDataScreen onBack={() => setView('settings')} />;
+  }
 
   return (
     <Screen contentStyle={styles.profileContent}>
@@ -1677,18 +2752,108 @@ function AccountSettingsScreen({ onBack }: { onBack: () => void }) {
           <MockEditField key={label} label={label} value={value} />
         ))}
       </Card>
-      <Card style={styles.dangerCard}>
-        <Text style={styles.dangerTitle}>Danger area</Text>
-        <Text style={styles.dangerText}>Delete account is intentionally kept inside Account Settings.</Text>
-        <CTAButton variant="ghost" small style={styles.dangerButton}>
-          Delete account
-        </CTAButton>
-      </Card>
+      <View style={styles.settingsList}>
+        <ProfileMenuItem
+          title="My Data"
+          detail="Export data, view AI-generated reports and manage account deletion"
+          onPress={() => setView('myData')}
+        />
+      </View>
       <View style={styles.editActionRow}>
         <CTAButton onPress={() => setSaved(true)} style={styles.editActionButton}>Save changes</CTAButton>
         <CTAButton variant="secondary" onPress={onBack} style={styles.editActionButton}>Cancel</CTAButton>
       </View>
     </Screen>
+  );
+}
+
+function MyDataScreen({ onBack }: { onBack: () => void }) {
+  const [message, setMessage] = useState('');
+
+  return (
+    <Screen contentStyle={styles.profileContent}>
+      <TopBar title="My Data" onBack={onBack} />
+      <Card style={styles.historyIntroCard}>
+        <Text style={styles.historyIntroTitle}>Home Logbook data controls</Text>
+        <Text style={styles.historyIntroText}>Export mocked datasets, review AI-generated reports and manage deeper data settings.</Text>
+      </Card>
+
+      {message ? (
+        <Card style={styles.saveNotice}>
+          <Text style={styles.saveNoticeTitle}>{message}</Text>
+          <Text style={styles.saveNoticeText}>Mock action complete. No backend data was changed.</Text>
+        </Card>
+      ) : null}
+
+      <Card style={styles.dataSectionCard}>
+        <Text style={styles.dataSectionTitle}>Data export</Text>
+        <View style={styles.dataExportList}>
+          {dataExportOptions.map((option) => (
+            <DataExportCard key={option} title={option} onPress={() => setMessage(`${option} ready`)} />
+          ))}
+        </View>
+      </Card>
+
+      <Card style={styles.dataSectionCard}>
+        <Text style={styles.dataSectionTitle}>AI-generated reports and summaries</Text>
+        <View style={styles.aiReportList}>
+          {aiReportSummaries.map(([title, date, description]) => (
+            <AIReportCard key={title} title={title} date={date} description={description} onView={() => setMessage(`${title} opened`)} />
+          ))}
+        </View>
+      </Card>
+
+      <DeleteAccountDangerZone onPress={() => setMessage('Delete account requested')} />
+    </Screen>
+  );
+}
+
+function DataExportCard({ title, onPress }: { title: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.dataExportRow, pressed && styles.pressed]}>
+      <View style={styles.dataExportIcon}>
+        <AppIcon name="source" size={28} active />
+      </View>
+      <Text style={styles.dataExportTitle}>{title}</Text>
+      <Text style={styles.settingsArrow}>Export</Text>
+    </Pressable>
+  );
+}
+
+function AIReportCard({
+  title,
+  date,
+  description,
+  onView,
+}: {
+  title: string;
+  date: string;
+  description: string;
+  onView: () => void;
+}) {
+  return (
+    <View style={styles.aiReportCard}>
+      <View style={styles.aiReportCopy}>
+        <Text style={styles.aiReportTitle}>{title}</Text>
+        <Text style={styles.aiReportDate}>{date}</Text>
+        <Text style={styles.aiReportDescription}>{description}</Text>
+      </View>
+      <CTAButton variant="secondary" small onPress={onView}>
+        View
+      </CTAButton>
+    </View>
+  );
+}
+
+function DeleteAccountDangerZone({ onPress }: { onPress: () => void }) {
+  return (
+    <Card style={styles.dangerCard}>
+      <Text style={styles.dangerTitle}>Delete account</Text>
+      <Text style={styles.dangerText}>Permanently delete your account and Home Logbook data.</Text>
+      <CTAButton variant="ghost" small onPress={onPress} style={styles.dangerButton}>
+        Delete account
+      </CTAButton>
+    </Card>
   );
 }
 
@@ -1905,10 +3070,12 @@ function buildSummaryNarrative(summary: SummaryRecord) {
 
 function PathDetailModal({ summary, onClose }: { summary: SummaryRecord | null; onClose: () => void }) {
   const [sourcePreviewVisible, setSourcePreviewVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
 
   useEffect(() => {
     if (!summary) {
       setSourcePreviewVisible(false);
+      setEditVisible(false);
     }
   }, [summary]);
 
@@ -1963,14 +3130,96 @@ function PathDetailModal({ summary, onClose }: { summary: SummaryRecord | null; 
                 />
               </ScrollView>
 
+              <View style={styles.summaryDetailFooter}>
+                <CTAButton onPress={() => setEditVisible(true)}>Edit</CTAButton>
+              </View>
+
               {sourcePreviewVisible ? (
                 <SourcePreviewPanel summary={summary} onClose={() => setSourcePreviewVisible(false)} />
+              ) : null}
+
+              {editVisible ? (
+                <SummaryCardEditPanel summary={summary} onClose={() => setEditVisible(false)} />
               ) : null}
             </>
           ) : null}
         </View>
       </View>
     </Modal>
+  );
+}
+
+function SummaryCardEditPanel({ summary, onClose }: { summary: SummaryRecord; onClose: () => void }) {
+  const [selectedScope, setSelectedScope] = useState<PropertyScope>(summary.propertyScope);
+  const [selectedStatus, setSelectedStatus] = useState<FileStatus>(summary.fileStatus);
+  const editableRows = [
+    ['WBS path', `${summary.wbsCode} ${summary.wbsName}`],
+    ['Record group / asset', `${summary.recordGroup} / ${summary.asset ?? 'Not captured'}`],
+    ['File name', summary.fileName ?? `${summary.title}.pdf`],
+    ['Document type', summary.documentType],
+    ['Tags', summary.tags.join(', ')],
+    ['Extracted fields', summary.details?.map((detail) => `${detail.label}: ${detail.value}`).join(' / ') ?? 'No extracted fields'],
+    ['Notes', summary.aiSummary],
+  ];
+
+  return (
+    <View style={styles.summaryEditOverlay}>
+      <View style={styles.summaryEditPanel}>
+        <View style={styles.pathPanelHeader}>
+          <View style={styles.pathPanelTitleGroup}>
+            <Text style={styles.pathPanelTitle}>Edit Summary Card</Text>
+            <Text style={styles.pathPanelSubtitle}>Mock edit fields for scope, status and extracted record metadata.</Text>
+          </View>
+          <CTAButton variant="quiet" small onPress={onClose}>Cancel</CTAButton>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.summaryEditContent}>
+          <View style={styles.editSection}>
+            <Text style={styles.editSectionTitle}>Scope</Text>
+            <View style={styles.editOptionWrap}>
+              {propertyScopeOptions.map((scope) => (
+                <Pressable
+                  key={scope}
+                  onPress={() => setSelectedScope(scope)}
+                  style={({ pressed }) => [styles.editOption, selectedScope === scope && styles.editOptionActive, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.editOptionText, selectedScope === scope && styles.editOptionTextActive]} numberOfLines={1}>Scope: {scope}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.editSection}>
+            <Text style={styles.editSectionTitle}>Status</Text>
+            <View style={styles.editOptionWrap}>
+              {fileStatusOptions.map((status) => (
+                <Pressable
+                  key={status}
+                  onPress={() => setSelectedStatus(status)}
+                  style={({ pressed }) => [styles.editOption, selectedStatus === status && styles.editOptionActive, pressed && styles.pressed]}
+                >
+                  <Text style={[styles.editOptionText, selectedStatus === status && styles.editOptionTextActive]} numberOfLines={1}>{status}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.editFieldList}>
+            {editableRows.map(([label, value]) => (
+              <View key={label} style={styles.editFieldRow}>
+                <Text style={styles.editFieldLabel}>{label}</Text>
+                <Text style={styles.editFieldValue}>{value}</Text>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+
+        <View style={styles.summaryEditActions}>
+          <CTAButton variant="secondary" onPress={onClose} style={styles.summaryEditAction}>Cancel</CTAButton>
+          <CTAButton onPress={onClose} style={styles.summaryEditAction}>Save changes</CTAButton>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -4037,6 +5286,22 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     backgroundColor: 'rgba(255,255,255,0.94)',
   },
+  propertySummaryPanel: {
+    gap: spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderColor: '#EFEFEF',
+  },
+  propertyTitleGroup: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  propertySummaryTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 20,
+    lineHeight: 25,
+    fontWeight: '900',
+  },
   profileAddress: {
     fontFamily,
     color: colors.text,
@@ -4073,6 +5338,167 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     fontWeight: '900',
+  },
+  aiSummaryNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#FFD8CA',
+    backgroundColor: '#FFF8F5',
+    padding: spacing.md,
+  },
+  aiSummaryNoticeText: {
+    flex: 1,
+    fontFamily,
+    color: colors.inkSoft,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  propertySectionList: {
+    gap: spacing.sm,
+  },
+  propertySectionCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    backgroundColor: '#FAFAFA',
+    overflow: 'hidden',
+  },
+  propertySectionHeader: {
+    minHeight: 72,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  propertySectionHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  propertySectionTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '900',
+  },
+  propertySectionSummary: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+  propertySectionToggle: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  propertySectionBody: {
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEFEF',
+    padding: spacing.md,
+    backgroundColor: colors.card,
+  },
+  propertySectionEditButton: {
+    alignSelf: 'flex-start',
+  },
+  propertyFieldGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  propertyFieldGridCompact: {
+    gap: spacing.xs,
+  },
+  propertyField: {
+    width: '47%',
+    minHeight: 58,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    backgroundColor: '#FBFCFD',
+    padding: spacing.sm,
+    gap: 2,
+  },
+  propertyFieldCompact: {
+    width: '48%',
+    minHeight: 50,
+    padding: spacing.xs,
+  },
+  propertyFieldLabel: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 10,
+    lineHeight: 14,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  propertyFieldValue: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+  },
+  propertyItemList: {
+    gap: spacing.sm,
+  },
+  propertyItemCard: {
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#E6EDF7',
+    backgroundColor: '#F8FBFF',
+    padding: spacing.md,
+  },
+  propertyItemHeader: {
+    gap: 2,
+  },
+  propertyItemTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '900',
+  },
+  propertyItemMeta: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '800',
+  },
+  sectionEditPanel: {
+    width: '100%',
+    maxWidth: 560,
+    maxHeight: '90%',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.84)',
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...warmShadow,
+  },
+  sectionEditContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  sectionActionGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  sectionActionButton: {
+    flexGrow: 1,
+    flexBasis: '47%',
   },
   switchHomeButton: {
     alignSelf: 'flex-start',
@@ -4201,6 +5627,87 @@ const styles = StyleSheet.create({
   },
   dangerButton: {
     alignSelf: 'flex-start',
+  },
+  dataSectionCard: {
+    gap: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+  },
+  dataSectionTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 18,
+    lineHeight: 23,
+    fontWeight: '900',
+  },
+  dataExportList: {
+    gap: spacing.sm,
+  },
+  dataExportRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    backgroundColor: '#FAFAFA',
+    paddingHorizontal: spacing.md,
+  },
+  dataExportIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: radius.md,
+    backgroundColor: colors.surfaceBlue,
+    borderWidth: 1,
+    borderColor: '#D8E2F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dataExportTitle: {
+    flex: 1,
+    fontFamily,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '800',
+  },
+  aiReportList: {
+    gap: spacing.sm,
+  },
+  aiReportCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    backgroundColor: '#FAFAFA',
+    padding: spacing.md,
+  },
+  aiReportCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  aiReportTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '900',
+  },
+  aiReportDate: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  aiReportDescription: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
   },
   historyIntroCard: {
     gap: spacing.sm,
@@ -4700,5 +6207,659 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md,
+  },
+  uploadFileContent: {
+    gap: spacing.lg,
+  },
+  uploadFileCard: {
+    gap: spacing.lg,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderColor: '#EFEFEF',
+  },
+  fileDropZone: {
+    minHeight: 178,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#FFD0C0',
+    backgroundColor: '#FFF8F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    padding: spacing.lg,
+  },
+  fileDropTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 20,
+    fontWeight: '900',
+  },
+  fileDropText: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    fontWeight: '800',
+  },
+  smartFilingCard: {
+    gap: spacing.md,
+    borderColor: '#FFD0C0',
+    backgroundColor: '#FFF9F6',
+    borderStyle: 'dashed',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  scopeConfirmTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  scopeSelectorPanel: {
+    width: '100%',
+    maxWidth: 520,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.82)',
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...warmShadow,
+  },
+  scopeSelectorOption: {
+    minHeight: 58,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#FAFAFA',
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  scopeSelectorOptionActive: {
+    borderColor: colors.navy,
+    backgroundColor: colors.surfaceBlue,
+  },
+  scopeSelectorTitle: {
+    flex: 1,
+    fontFamily,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  viewSettingsButton: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsGear: {
+    width: 26,
+    height: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsGearCircle: {
+    width: 16,
+    height: 16,
+    borderRadius: radius.pill,
+    borderWidth: 1.4,
+    borderColor: colors.navy,
+  },
+  settingsGearTooth: {
+    position: 'absolute',
+    width: 2,
+    height: 24,
+    borderRadius: radius.pill,
+    backgroundColor: colors.navy,
+  },
+  settingsGearToothA: {
+    transform: [{ rotate: '0deg' }],
+  },
+  settingsGearToothB: {
+    transform: [{ rotate: '60deg' }],
+  },
+  settingsGearToothC: {
+    transform: [{ rotate: '120deg' }],
+  },
+  manageViewsPanel: {
+    width: '100%',
+    maxWidth: 560,
+    maxHeight: '90%',
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.84)',
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...warmShadow,
+  },
+  manageViewsList: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
+  },
+  manageViewRow: {
+    minHeight: 64,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    backgroundColor: '#FAFAFA',
+    padding: spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  manageViewCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  manageViewTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  manageViewMeta: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  reorderButtons: {
+    gap: 2,
+  },
+  iosSwitch: {
+    width: 52,
+    height: 30,
+    borderRadius: radius.pill,
+    backgroundColor: '#E4E4E4',
+    padding: 3,
+    justifyContent: 'center',
+  },
+  iosSwitchActive: {
+    backgroundColor: colors.coral,
+  },
+  iosSwitchKnob: {
+    width: 24,
+    height: 24,
+    borderRadius: radius.pill,
+    backgroundColor: colors.card,
+    shadowColor: 'rgba(23,23,23,0.24)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.16,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  iosSwitchKnobActive: {
+    transform: [{ translateX: 22 }],
+  },
+  dragHandleIcon: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  dragHandleLine: {
+    width: 17,
+    height: 1.5,
+    borderRadius: radius.pill,
+    backgroundColor: '#9A9A9A',
+  },
+  chatSourceMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  chatSourceVersion: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  summaryDetailFooter: {
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEFEF',
+  },
+  summaryEditOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderRadius: 18,
+    backgroundColor: 'rgba(23,23,23,0.24)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+  },
+  summaryEditPanel: {
+    width: '100%',
+    maxHeight: '92%',
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.86)',
+    padding: spacing.lg,
+    gap: spacing.md,
+    ...warmShadow,
+  },
+  summaryEditContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  editSection: {
+    gap: spacing.sm,
+  },
+  editSectionTitle: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  editOptionWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  editOption: {
+    minHeight: 38,
+    maxWidth: '100%',
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#FAFAFA',
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+  },
+  editOptionActive: {
+    borderColor: colors.coral,
+    backgroundColor: '#FFF0EA',
+  },
+  editOptionText: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  editOptionTextActive: {
+    color: colors.coral,
+  },
+  editFieldList: {
+    gap: spacing.sm,
+  },
+  editFieldRow: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    backgroundColor: '#FAFAFA',
+    padding: spacing.md,
+    gap: spacing.xs,
+  },
+  editFieldLabel: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  editFieldValue: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  summaryEditActions: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  summaryEditAction: {
+    flex: 1,
+  },
+  logbookHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    width: '100%',
+  },
+  logbookHeaderCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  logbookSearchButton: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: '#FFD0C0',
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    ...softShadow,
+  },
+  logbookSearchButtonPressed: {
+    opacity: 0.82,
+    transform: [{ scale: 0.96 }],
+    backgroundColor: '#FFF7F3',
+  },
+  searchGlyph: {
+    width: 25,
+    height: 25,
+  },
+  searchGlyphCircle: {
+    position: 'absolute',
+    left: 3,
+    top: 3,
+    width: 15,
+    height: 15,
+    borderRadius: radius.pill,
+    borderWidth: 1.7,
+    borderColor: colors.coral,
+  },
+  searchGlyphHandle: {
+    position: 'absolute',
+    right: 3,
+    bottom: 4,
+    width: 10,
+    height: 1.7,
+    borderRadius: radius.pill,
+    backgroundColor: colors.coral,
+    transform: [{ rotate: '45deg' }],
+  },
+  searchModalRoot: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  searchPanel: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    backgroundColor: colors.background,
+    padding: spacing.lg,
+    gap: spacing.md,
+    position: 'relative',
+  },
+  searchHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  searchHeaderTitleGroup: {
+    flex: 1,
+    minWidth: 0,
+    gap: spacing.xs,
+  },
+  searchHeaderSpacer: {
+    width: 58,
+  },
+  searchInputWrap: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    borderRadius: radius.pill,
+    backgroundColor: '#FAFAFA',
+    paddingHorizontal: spacing.md,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 50,
+    fontFamily,
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  searchSubmitButton: {
+    minWidth: 66,
+    height: 38,
+    borderRadius: radius.pill,
+    backgroundColor: colors.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  searchSubmitButtonDisabled: {
+    backgroundColor: '#E8E8E8',
+  },
+  searchSubmitText: {
+    fontFamily,
+    color: colors.card,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  searchSubmitTextDisabled: {
+    color: '#9A9A9A',
+  },
+  searchSuggestionScroller: {
+    flexGrow: 0,
+    flexShrink: 0,
+    height: 36,
+    maxHeight: 36,
+  },
+  searchSuggestionRow: {
+    gap: spacing.sm,
+    paddingRight: spacing.lg,
+    alignItems: 'center',
+  },
+  searchSuggestionChip: {
+    height: 34,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: '#FFD0C0',
+    backgroundColor: '#FFF8F5',
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchSuggestionText: {
+    fontFamily,
+    color: colors.coral,
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  searchResultsList: {
+    flexGrow: 1,
+    gap: spacing.md,
+    paddingBottom: spacing.xxl,
+  },
+  searchResultsScroll: {
+    flex: 1,
+    minHeight: 0,
+  },
+  searchResultsSummary: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '900',
+  },
+  searchStartCard: {
+    gap: spacing.sm,
+    backgroundColor: '#FBFCFD',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  searchLoadingCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    backgroundColor: '#F8FBFF',
+    borderColor: '#CDE1FA',
+    shadowOpacity: 0,
+    elevation: 0,
+  },
+  searchLoadingSpinner: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.pill,
+    borderWidth: 3,
+    borderColor: '#DCEBFA',
+    borderTopColor: colors.coral,
+    borderRightColor: colors.coral,
+  },
+  searchLoadingCopy: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  scrollTopButton: {
+    position: 'absolute',
+    right: spacing.lg,
+    bottom: spacing.lg,
+    width: 46,
+    height: 46,
+    borderRadius: radius.pill,
+    backgroundColor: '#EAF5FF',
+    borderWidth: 1,
+    borderColor: '#B9DDF8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#2B6FA8',
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
+  },
+  scrollTopGlyph: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollTopStem: {
+    position: 'absolute',
+    width: 2,
+    height: 15,
+    borderRadius: radius.pill,
+    backgroundColor: colors.navy,
+    bottom: 2,
+  },
+  scrollTopWingLeft: {
+    position: 'absolute',
+    width: 10,
+    height: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.navy,
+    top: 4,
+    left: 3,
+    transform: [{ rotate: '-42deg' }],
+  },
+  scrollTopWingRight: {
+    position: 'absolute',
+    width: 10,
+    height: 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.navy,
+    top: 4,
+    right: 3,
+    transform: [{ rotate: '42deg' }],
+  },
+  searchResultCard: {
+    gap: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+  },
+  searchResultHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  searchResultTitleGroup: {
+    flex: 1,
+    minWidth: 0,
+    gap: 3,
+  },
+  searchResultTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 16,
+    lineHeight: 21,
+    fontWeight: '900',
+  },
+  searchResultMeta: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
+  },
+  searchPathPreview: {
+    fontFamily,
+    color: colors.navy,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+  },
+  searchTagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  searchResultFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEFEF',
+    paddingTop: spacing.sm,
+  },
+  searchResultDate: {
+    flex: 1,
+    fontFamily,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  searchEmptyState: {
+    minHeight: 210,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+    backgroundColor: '#FAFAFA',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+    padding: spacing.lg,
+  },
+  searchEmptyTitle: {
+    fontFamily,
+    color: colors.text,
+    fontSize: 18,
+    lineHeight: 23,
+    textAlign: 'center',
+    fontWeight: '900',
+  },
+  searchEmptyText: {
+    fontFamily,
+    color: colors.muted,
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: 'center',
+    fontWeight: '700',
+  },
+  searchEmptyChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.sm,
   },
 });
