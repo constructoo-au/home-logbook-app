@@ -414,20 +414,6 @@ export function SourceFilePreviewCard({
         </View>
       </View>
 
-      <View style={styles.sourceMetaGrid}>
-        <SourceMeta label="File name" value={summary.fileName ?? `${summary.title}.pdf`} />
-        <SourceMeta label="File type" value={summary.fileType ?? summary.documentType} />
-        <SourceMeta label="Uploaded" value={summary.uploadedDate} />
-        <SourceMeta label="Version" value={summary.version} />
-        <SourceMeta label="Latest" value={summary.latest ? 'Latest version' : 'Older version'} />
-        <SourceMeta label="Status" value={summary.fileStatus} />
-        <SourceMeta label="Scope" value={summary.propertyScope} />
-        <SourceMeta label="Document type" value={summary.documentType} />
-        <SourceMeta label="WBS path" value={`${summary.wbsCode} ${summary.wbsName}`} />
-      </View>
-
-      <PropertyScopeChip scope={summary.propertyScope} />
-      <PathChips path={summary.path} onPress={onOpenSource} />
 
       <ScrollView
         nestedScrollEnabled
